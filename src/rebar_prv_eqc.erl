@@ -58,13 +58,18 @@ format_error({properties_failed, FailedProps}) ->
 %% ===================================================================
 
 do_tests(State, _Tests) ->
-    _EqcOpts = resolve_eqc_opts(State),
+    EqcOpts = resolve_eqc_opts(State),
+
+    {EqcFun, TestQuantity} = numtests_or_testing_time(EqcOpts),
 
     ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
 
     ProjectApps = project_apps(State),
-    TestMods = app_modules(app_names(ProjectApps), []),
-    Result = make_result([eqc:module(Test) || Test <- TestMods]),
+    Properties = properties(app_modules(app_names(ProjectApps), [])),
+    Result = make_result([{Property,
+                           eqc:quickcheck(eqc:EqcFun(TestQuantity,
+                                                     Mod:Property()))}
+                          || {Mod, Property} <- Properties]),
     case handle_results(Result) of
         {error, Reason} ->
             ?PRV_ERROR(Reason);
@@ -72,16 +77,54 @@ do_tests(State, _Tests) ->
             {ok, State}
     end.
 
+numtests_or_testing_time(Opts) ->
+    case lists:keyfind(numtests, 1, Opts) of
+        false ->
+            lists:keyfind(testing_time, 1, Opts);
+        NumTests ->
+            NumTests
+    end.
+
+-spec properties(Modules) -> Properties when
+      Modules :: [atom()],
+      Properties :: [{atom(), atom()}].
+%% Scan the exports for each module for properties and return a list of
+%% `{Module, Property}' pairs
+properties(Modules) ->
+    lists:flatten(
+      [lists:filtermap(property_filter_fun(M),
+                       M:module_info(exports)) || M <- Modules]).
+
+-type property_filter_fun() :: fun(({atom(), non_neg_integer()}) ->
+                                          boolean() | {true, {atom(), atom()}}).
+-spec property_filter_fun(atom()) -> property_filter_fun().
+property_filter_fun(Module) ->
+    fun({Function, 0}) ->
+        %% Properties must be 0-arity
+        BinFun = atom_to_binary(Function, latin1),
+        case BinFun of
+            <<"prop_", _/binary>> ->
+                {true, {Module, Function}};
+            _ ->
+                false
+        end;
+       (_) ->
+        false
+    end.
+
 -spec app_names([rebar_app_info:t()]) -> [atom()].
 app_names(Apps) ->
     [binary_to_atom(rebar_app_info:name(A), unicode) || A <- Apps].
 
 make_result(Results) ->
-    case lists:all(fun([]) -> true; (_) -> false end, Results) of
-        true ->
+    Fails = lists:filtermap(fun({_, true}) -> false;
+                               ({Prop, false}) -> {true, Prop} end,
+                            Results),
+    case Fails of
+        [] ->
             ok;
-        false ->
-            {error, Results}
+        _ ->
+            {error, Fails}
     end.
 
 test_state(State) ->
@@ -195,9 +238,68 @@ set_apps([App|Rest], Acc) ->
     set_apps(Rest, [{application, AppName}|Acc]).
 
 resolve_eqc_opts(State) ->
-    %% TODO: Check for command line properties
-    {_Opts, _} = rebar_state:command_parsed_args(State),
-    rebar_state:get(State, eqc_opts, []).
+    {Opts, _} = rebar_state:command_parsed_args(State),
+    EqcOpts = rebar_state:get(State, eqc_opts, []),
+    TestingTime = proplists:get_value(testing_time, Opts),
+    NumTests = proplists:get_value(numtests, Opts),
+    set_test_quantifier(NumTests, TestingTime, EqcOpts).
+
+set_test_quantifier(undefined, undefined, Opts) ->
+    NumTestsPresent = lists:keymember(numtests, 1, Opts),
+    TestTimePresent = lists:keymember(testing_time, 1, Opts),
+    if
+        NumTestsPresent andalso TestTimePresent ->
+            lists:keydelete(testing_time, 1, Opts);
+        NumTestsPresent ->
+            Opts;
+        TestTimePresent ->
+            maybe_keep_testing_time(Opts);
+        true ->
+            lists:keystore(numtests, 1, Opts, {numtests, 100})
+    end;
+set_test_quantifier(undefined, Time, Opts) ->
+    maybe_add_testing_time(Time, Opts);
+set_test_quantifier(NumTests, undefined, Opts) ->
+    lists:keystore(numtests, 1, Opts, {numtests, NumTests}).
+
+%% Only add the testing_time option if the function is actually
+%% available in the EQC module. This is only the case for licensed
+%% versions of EQC.
+maybe_add_testing_time(Time, Opts) ->
+    case testing_time_available() of
+        true ->
+            lists:keystore(testing_time, 1, Opts, {testing_time, Time});
+        false ->
+            maybe_add_default_numtests(Opts)
+    end.
+
+maybe_add_default_numtests(Opts) ->
+    case lists:keymember(numtests, 1, Opts) of
+        true ->
+            Opts;
+        false ->
+            lists:keystore(numtests,
+                           1,
+                           lists:keydelete(testing_time, 1, Opts),
+                           {numtests, 100})
+    end.
+
+%% Only keep the testing_time option if the function is actually
+%% available in the EQC module. This is only the case for licensed
+%% versions of EQC.
+maybe_keep_testing_time(Opts) ->
+    case testing_time_available() of
+        true ->
+            Opts;
+        false ->
+            lists:keystore(numtests,
+                           1,
+                           lists:keydelete(testing_time, 1, Opts),
+                           {numtests, 100})
+    end.
+
+testing_time_available() ->
+    lists:keymember(testing_time, 1, eqc:module_info(exports)).
 
 handle_results(ok) -> ok;
 handle_results(error) ->
@@ -207,13 +309,13 @@ handle_results({error, FailedProps}) ->
 
 eqc_opts(_State) ->
     [
-     %% {props, $p, "props", string, help(props)},
-     %% {cover, $c, "cover", boolean, help(cover)},
-     %% {eunit, $e, "eunit", boolean, help(eunit)}
+     {numtests, $n, "numtests", integer, help(numtests)},
+     {testing_time, $t, "testtime", integer, help(testing_time)}
     ].
 
-%% TODO
-%% help(mods)  -> "Run the properties from the specified modules";
-%% help(props) -> "List of eqc properties to run.";
-%% help(cover) -> "Generate cover data";
-%% help(eunit) -> "Set EQC compiler directive and run eunit tests."
+help(numtests) -> "The number of times to execute each property";
+help(testing_time) -> "Time (secs) to spend executing each property. "
+                         "The testtime and numtests options are "
+                         "mutually exclusive. If both are specified "
+                         "numtests is used. Use of this option requires "
+                         "the full version of EQC.".
