@@ -40,9 +40,10 @@ init(State) ->
 do(State) ->
     eqc:start(),
     ?INFO("Running EQC tests...", []),
-    case prepare_tests(State) of
+    EqcOpts = resolve_eqc_opts(State),
+    case prepare_tests(State, EqcOpts) of
         {ok, Tests} ->
-            do_tests(State, Tests);
+            do_tests(State, EqcOpts, Tests);
         Error ->
             Error
     end.
@@ -57,15 +58,14 @@ format_error({properties_failed, FailedProps}) ->
 %% Internal functions
 %% ===================================================================
 
-do_tests(State, _Tests) ->
-    EqcOpts = resolve_eqc_opts(State),
-
+do_tests(State, EqcOpts, _Tests) ->
     {EqcFun, TestQuantity} = numtests_or_testing_time(EqcOpts),
 
     ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
 
     ProjectApps = project_apps(State),
-    Properties = properties(app_modules(app_names(ProjectApps), [])),
+    Properties = properties(app_modules(app_names(ProjectApps), []) ++
+                                test_modules(ProjectApps, proplists:get_value(dir, EqcOpts))),
     Result = make_result([{Property,
                            eqc:quickcheck(eqc:EqcFun(TestQuantity,
                                                      Mod:Property()))}
@@ -163,12 +163,27 @@ first_files(State) ->
     EUnitFirst = rebar_state:get(State, eunit_first_files, []),
     [{erl_first_files, EUnitFirst}].
 
-prepare_tests(State) ->
-    {RawOpts, _} = rebar_state:command_parsed_args(State),
-    resolve_apps(State, RawOpts).
+prepare_tests(State, EqcOpts) ->
+    resolve_apps(State, EqcOpts).
 
 resolve_apps(State, RawOpts) ->
     compile_tests(State, project_apps(State), all, RawOpts).
+
+copy_and_compile_test_dirs(State, Opts) ->
+    case proplists:get_value(dir, Opts) of
+        undefined -> {error, {no_tests_specified, Opts}};
+        %% dir is a single directory
+        Dir when is_list(Dir), is_integer(hd(Dir)) ->
+            NewPath = copy(State, Dir),
+            [{dir, compile_dir(State, NewPath)}|lists:keydelete(dir, 1, Opts)];
+        %% dir is a list of directories
+        Dirs when is_list(Dirs) ->
+            NewDirs = lists:map(fun(Dir) ->
+                NewPath = copy(State, Dir),
+                compile_dir(State, NewPath)
+            end, Dirs),
+            [{dir, NewDirs}|lists:keydelete(dir, 1, Opts)]
+    end.
 
 compile_tests(State, TestApps, Suites, RawOpts) ->
     F = fun(AppInfo) ->
@@ -180,12 +195,35 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
             AppState ->
                 AppState
         end,
-        ok = rebar_erlc_compiler:compile(replace_src_dirs(S),
+        ok = rebar_erlc_compiler:compile(replace_src_dirs(S, ["eqc"]),
                                          ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
     end,
     lists:foreach(F, TestApps),
     ok = maybe_cover_compile(State, RawOpts),
+    copy_and_compile_test_dirs(State, RawOpts),
     {ok, test_set(TestApps, Suites)}.
+
+
+copy(State, Target) ->
+    case retarget_path(State, Target) of
+        %% directory lies outside of our project's file structure so
+        %%  don't copy it
+        Target    -> Target;
+        NewTarget ->
+            %% unlink the directory if it's a symlink
+            case ec_file:is_symlink(NewTarget) of
+                true  -> ok = ec_file:remove(NewTarget);
+                false -> ok
+            end,
+            ok = ec_file:copy(Target, NewTarget, [recursive]),
+            NewTarget
+    end.
+
+compile_dir(State, Dir) ->
+    NewState = replace_src_dirs(State, [Dir]),
+    ok = rebar_erlc_compiler:compile(NewState, rebar_dir:base_dir(State), Dir),
+    ok = maybe_cover_compile(State, Dir),
+    Dir.
 
 maybe_cover_compile(State, Opts) ->
     State1 = case proplists:get_value(cover, Opts, false) of
@@ -206,6 +244,25 @@ filter_checkouts([App|Rest], Acc) ->
         false -> filter_checkouts(Rest, [App|Acc])
     end.
 
+test_modules(_, undefined) ->
+    [];
+test_modules(ProjectApps, TestDir) ->
+    lists:flatten([project_tests(ProjectApp, TestDir) || ProjectApp <- ProjectApps]).
+
+project_tests(ProjectApp, TestDir) ->
+    Path = filename:join(rebar_app_info:dir(ProjectApp), TestDir),
+    case file:list_dir(Path) of
+        {ok, Files} ->
+            Modules = [list_to_atom(filename:rootname(File)) || File <- Files],
+            load_files(Modules),
+            Modules;
+        {error, _} ->
+            []
+    end.
+
+load_files(Modules) ->
+    [code:ensure_loaded(Module) || Module <- Modules].
+
 app_modules([], Acc) -> Acc;
 app_modules([App|Rest], Acc) ->
     Unload = case application:load(App) of
@@ -224,11 +281,11 @@ app_modules([App|Rest], Acc) ->
             app_modules(Rest, NewAcc)
     end.
 
-replace_src_dirs(State) ->
-    %% replace any `src_dirs` with just the `test` dir
+replace_src_dirs(State, Dirs) ->
+    %% replace any `src_dirs` with the test dirs
     ErlOpts = rebar_state:get(State, erl_opts, []),
     StrippedOpts = lists:keydelete(src_dirs, 1, ErlOpts),
-    rebar_state:set(State, erl_opts, [{src_dirs, ["test"]}|StrippedOpts]).
+    rebar_state:set(State, erl_opts, [{src_dirs, Dirs}|StrippedOpts]).
 
 test_set(Apps, all) -> set_apps(Apps, []).
 
@@ -242,7 +299,12 @@ resolve_eqc_opts(State) ->
     EqcOpts = rebar_state:get(State, eqc_opts, []),
     TestingTime = proplists:get_value(testing_time, Opts),
     NumTests = proplists:get_value(numtests, Opts),
-    set_test_quantifier(NumTests, TestingTime, EqcOpts).
+    set_test_dir(set_test_quantifier(NumTests, TestingTime, EqcOpts)).
+
+%% Add "eqc" test directory.
+%% TODO: Provide option to configure directory name
+set_test_dir(Opts) ->
+    [{dir, "eqc"} | Opts].
 
 set_test_quantifier(undefined, undefined, Opts) ->
     NumTestsPresent = lists:keymember(numtests, 1, Opts),
@@ -319,3 +381,41 @@ help(testing_time) -> "Time (secs) to spend executing each property. "
                          "mutually exclusive. If both are specified "
                          "numtests is used. Use of this option requires "
                          "the full version of EQC.".
+
+retarget_path(State, Path) ->
+    ProjectApps = rebar_state:project_apps(State),
+    retarget_path(State, Path, ProjectApps).
+
+%% not relative to any apps in project, check to see it's relative to
+%%  project root
+retarget_path(State, Path, []) ->
+    case relative_path(reduce_path(Path), rebar_state:dir(State)) of
+        {ok, NewPath}         -> filename:join([rebar_dir:base_dir(State), NewPath]);
+        %% not relative to project root, don't modify
+        {error, not_relative} -> Path
+    end;
+%% relative to current app, retarget to the same dir relative to
+%%  the app's out_dir
+retarget_path(State, Path, [App|Rest]) ->
+    case relative_path(reduce_path(Path), rebar_app_info:dir(App)) of
+        {ok, NewPath}         -> filename:join([rebar_app_info:out_dir(App), NewPath]);
+        {error, not_relative} -> retarget_path(State, Path, Rest)
+    end.
+
+relative_path(Target, To) ->
+    relative_path1(filename:split(filename:absname(Target)),
+                   filename:split(filename:absname(To))).
+
+relative_path1([Part|Target], [Part|To]) -> relative_path1(Target, To);
+relative_path1([], [])                   -> {ok, ""};
+relative_path1(Target, [])               -> {ok, filename:join(Target)};
+relative_path1(_, _)                     -> {error, not_relative}.
+
+reduce_path(Dir) -> reduce_path([], filename:split(filename:absname(Dir))).
+
+reduce_path([], [])                -> filename:nativename("/");
+reduce_path(Acc, [])               -> filename:join(lists:reverse(Acc));
+reduce_path(Acc, ["."|Rest])       -> reduce_path(Acc, Rest);
+reduce_path([_|Acc], [".."|Rest])  -> reduce_path(Acc, Rest);
+reduce_path([], [".."|Rest])       -> reduce_path([], Rest);
+reduce_path(Acc, [Component|Rest]) -> reduce_path([Component|Acc], Rest).
