@@ -64,17 +64,33 @@ do_tests(State, EqcOpts, _Tests) ->
     ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
 
     ProjectApps = project_apps(State),
-    Properties = properties(app_modules(app_names(ProjectApps), []) ++
-                                test_modules(ProjectApps, proplists:get_value(dir, EqcOpts))),
-    Result = make_result([{Property,
-                           eqc:quickcheck(eqc:EqcFun(TestQuantity,
-                                                     Mod:Property()))}
-                          || {Mod, Property} <- Properties]),
-    case handle_results(Result) of
+    AllProps = properties(app_modules(app_names(ProjectApps), []) ++
+                              test_modules(ProjectApps,
+                                           proplists:get_value(dir, EqcOpts))),
+    Properties = proplists:get_value(properties, EqcOpts, AllProps),
+    ExecuteFun = execute_property_fun(EqcFun, TestQuantity, AllProps),
+    case handle_results(make_result(lists:foldl(ExecuteFun, [], Properties))) of
         {error, Reason} ->
             ?PRV_ERROR(Reason);
         ok ->
             {ok, State}
+    end.
+
+execute_property_fun(EqcFun, TestQuantity, AllProps) ->
+    fun({Module, Property}, Results) ->
+        Result = eqc:quickcheck(eqc:EqcFun(TestQuantity, Module:Property())),
+        [{Property, Result} | Results];
+       (Property, Results) ->
+        case lists:keyfind(Property, 2, AllProps) of
+            {Module, Property} ->
+                Result = eqc:quickcheck(eqc:EqcFun(TestQuantity,
+                                                   Module:Property())),
+                [{Property, Result} | Results];
+            false ->
+                %% TODO: Add some error handling for when specified
+                %% properties are not found
+                [{Property, true} | Results]
+        end
     end.
 
 numtests_or_testing_time(Opts) ->
@@ -299,12 +315,29 @@ resolve_eqc_opts(State) ->
     EqcOpts = rebar_state:get(State, eqc_opts, []),
     TestingTime = proplists:get_value(testing_time, Opts),
     NumTests = proplists:get_value(numtests, Opts),
-    set_test_dir(set_test_quantifier(NumTests, TestingTime, EqcOpts)).
+    MergedOpts = merge_opts(EqcOpts, parse_opts(Opts, [])),
+    set_test_quantifier(NumTests, TestingTime, MergedOpts).
 
-%% Add "eqc" test directory.
-%% TODO: Provide option to configure directory name
-set_test_dir(Opts) ->
-    [{dir, "eqc"} | Opts].
+merge_opts(Opts1, Opts2) ->
+    lists:ukeymerge(1,
+                    lists:ukeysort(1, Opts1),
+                    lists:ukeysort(1, Opts2)).
+
+parse_opts([], Parsed) ->
+    %% Add "eqc" test directory.
+    %% TODO: Provide option to configure directory name
+    [{dir, "eqc"} | Parsed];
+parse_opts([{properties, PropsString} | RestOpts], Parsed) ->
+    Properties = [property_to_atom(string:tokens(Prop, ":"))
+                  || Prop <- string:tokens(PropsString, ",")],
+    parse_opts(RestOpts, [{properties, Properties} | Parsed]).
+
+property_to_atom([Property]) ->
+    %% If no module is given the loaded modules are searched for a
+    %% matching property.
+    list_to_atom(Property);
+property_to_atom([Module, Property]) ->
+    {list_to_atom(Module), list_to_atom(Property)}.
 
 set_test_quantifier(undefined, undefined, Opts) ->
     NumTestsPresent = lists:keymember(numtests, 1, Opts),
@@ -372,7 +405,8 @@ handle_results({error, FailedProps}) ->
 eqc_opts(_State) ->
     [
      {numtests, $n, "numtests", integer, help(numtests)},
-     {testing_time, $t, "testtime", integer, help(testing_time)}
+     {testing_time, $t, "testtime", integer, help(testing_time)},
+     {properties, $p, "properties", string, help(properties)}
     ].
 
 help(numtests) -> "The number of times to execute each property";
@@ -380,7 +414,8 @@ help(testing_time) -> "Time (secs) to spend executing each property. "
                          "The testtime and numtests options are "
                          "mutually exclusive. If both are specified "
                          "numtests is used. Use of this option requires "
-                         "the full version of EQC.".
+                         "the full version of EQC.";
+help(properties) -> "The list of properties to run".
 
 retarget_path(State, Path) ->
     ProjectApps = rebar_state:project_apps(State),
