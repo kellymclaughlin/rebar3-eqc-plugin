@@ -13,6 +13,12 @@ with the default being 100 times. For users of the full version of EQC
 it is also possible to have each property execute for a certain period
 of time as opposed to a fixed number of iterations per property.
 
+The plugin takes the approach of executing EQC properties directly as
+opposed to the common pattern of indirect execution via another test
+framework. There are still cases where it may be useful to use eunit
+or common_test for execution of EQC properties, but there are many
+cases where that is not required.
+
 The plugin scans all source modules for EQC properties. Additionally
 it looks for standalone EQC properties in a top-level `eqc` directory.
 
@@ -22,16 +28,6 @@ overridden by using the `--properties` option to specify a
 comma-separated list of properties to be executed. List entries may be
 of the form `ModuleName:PropertyName` or simply `PropertyName` if the
 property name is unique within the project.
-
-Other interesting capabilities will be added soon. Some of the
-possibilities include, but are not limited to the following:
-
-* Provide options to only run the properties from specific apps or modules.
-* Provide a way to re-test a property using a saved counterexample.
-* Add an option to just set the EQC compiler directive and then do a
-normal eunit test execution.
-
-Suggestions for other useful options or additions are welcome.
 
 ## Configuration
 
