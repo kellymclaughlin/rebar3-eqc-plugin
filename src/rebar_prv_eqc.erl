@@ -335,7 +335,9 @@ parse_opts([], Parsed) ->
 parse_opts([{properties, PropsString} | RestOpts], Parsed) ->
     Properties = [property_to_atom(string:tokens(Prop, ":"))
                   || Prop <- string:tokens(PropsString, ",")],
-    parse_opts(RestOpts, [{properties, Properties} | Parsed]).
+    parse_opts(RestOpts, [{properties, Properties} | Parsed]);
+parse_opts([Opt | RestOpts], Parsed) ->
+    parse_opts(RestOpts, [Opt | Parsed]).
 
 property_to_atom([Property]) ->
     %% If no module is given the loaded modules are searched for a
