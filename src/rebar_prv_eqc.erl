@@ -242,7 +242,9 @@ copy(State, Target) ->
 
 compile_dir(State, Dir) ->
     NewState = replace_src_dirs(State, [Dir]),
-    ok = rebar_erlc_compiler:compile(NewState, rebar_dir:base_dir(State), Dir),
+    ok = rebar_erlc_compiler:compile(NewState,
+                                     rebar_dir:base_dir(State),
+                                     filename:join(Dir, "../ebin")),
     ok = maybe_cover_compile(State, Dir),
     Dir.
 
