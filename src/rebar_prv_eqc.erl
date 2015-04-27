@@ -186,20 +186,25 @@ resolve_apps(State, RawOpts) ->
     compile_tests(State, project_apps(State), all, RawOpts).
 
 copy_and_compile_test_dirs(State, Opts) ->
-    case proplists:get_value(dir, Opts) of
-        undefined -> {error, {no_tests_specified, Opts}};
-        %% dir is a single directory
-        Dir when is_list(Dir), is_integer(hd(Dir)) ->
-            NewPath = copy(State, Dir),
-            [{dir, compile_dir(State, NewPath)}|lists:keydelete(dir, 1, Opts)];
+    copy_and_compile_test_dirs(State, Opts, proplists:get_value(dir, Opts)).
+
+copy_and_compile_test_dirs(_State, Opts, undefined) ->
+    {error, {no_tests_specified, Opts}};
+copy_and_compile_test_dirs(State, Opts, Dir) when is_list(Dir),
+                                                  is_integer(hd(Dir)) ->
+    %% dir is a single directory
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    NewPath = copy(State, Dir),
+    [{dir, compile_dir(State, NewPath)}|lists:keydelete(dir, 1, Opts)];
+copy_and_compile_test_dirs(State, Opts, Dirs) when is_list(Dirs) ->
         %% dir is a list of directories
-        Dirs when is_list(Dirs) ->
-            NewDirs = lists:map(fun(Dir) ->
-                NewPath = copy(State, Dir),
-                compile_dir(State, NewPath)
-            end, Dirs),
-            [{dir, NewDirs}|lists:keydelete(dir, 1, Opts)]
-    end.
+    MapFun = fun(Dir) ->
+                 ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+                 NewPath = copy(State, Dir),
+                 compile_dir(State, NewPath)
+             end,
+    NewDirs = lists:map(MapFun, Dirs),
+    [{dir, NewDirs} | lists:keydelete(dir, 1, Opts)].
 
 compile_tests(State, TestApps, Suites, RawOpts) ->
     F = fun(AppInfo) ->
