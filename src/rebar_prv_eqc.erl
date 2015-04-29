@@ -197,7 +197,7 @@ copy_and_compile_test_dirs(State, Opts, Dir) when is_list(Dir),
     NewPath = copy(State, Dir),
     [{dir, compile_dir(State, NewPath)}|lists:keydelete(dir, 1, Opts)];
 copy_and_compile_test_dirs(State, Opts, Dirs) when is_list(Dirs) ->
-        %% dir is a list of directories
+    %% dir is a list of directories
     MapFun = fun(Dir) ->
                  ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
                  NewPath = copy(State, Dir),
@@ -207,6 +207,7 @@ copy_and_compile_test_dirs(State, Opts, Dirs) when is_list(Dirs) ->
     [{dir, NewDirs} | lists:keydelete(dir, 1, Opts)].
 
 compile_tests(State, TestApps, Suites, RawOpts) ->
+    copy_and_compile_test_dirs(State, RawOpts),
     F = fun(AppInfo) ->
         AppDir = rebar_app_info:dir(AppInfo),
         S = case rebar_app_info:state(AppInfo) of
@@ -221,7 +222,6 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
     end,
     lists:foreach(F, TestApps),
     ok = maybe_cover_compile(State, RawOpts),
-    copy_and_compile_test_dirs(State, RawOpts),
     {ok, test_set(TestApps, Suites)}.
 
 
