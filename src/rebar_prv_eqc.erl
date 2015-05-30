@@ -69,7 +69,7 @@ do_tests(State, EqcOpts, _Tests) ->
                                            proplists:get_value(dir, EqcOpts))),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
     ExecuteFun = execute_property_fun(EqcFun, TestQuantity, AllProps),
-    case handle_results(make_result(lists:foldl(ExecuteFun, [], Properties))) of
+    case handle_results(lists:foldl(ExecuteFun, [], Properties)) of
         {error, Reason} ->
             ?PRV_ERROR(Reason);
         ok ->
@@ -78,12 +78,12 @@ do_tests(State, EqcOpts, _Tests) ->
 
 execute_property_fun(EqcFun, TestQuantity, AllProps) ->
     fun({Module, Property}, Results) ->
-        Result = eqc:quickcheck(eqc:EqcFun(TestQuantity, Module:Property())),
+        Result = eqc:counterexample(eqc:EqcFun(TestQuantity, Module:Property())),
         [{Property, Result} | Results];
        (Property, Results) ->
         case lists:keyfind(Property, 2, AllProps) of
             {Module, Property} ->
-                Result = eqc:quickcheck(eqc:EqcFun(TestQuantity,
+                Result = eqc:counterexample(eqc:EqcFun(TestQuantity,
                                                    Module:Property())),
                 [{Property, Result} | Results];
             false ->
@@ -131,17 +131,6 @@ property_filter_fun(Module) ->
 -spec app_names([rebar_app_info:t()]) -> [atom()].
 app_names(Apps) ->
     [binary_to_atom(rebar_app_info:name(A), unicode) || A <- Apps].
-
-make_result(Results) ->
-    Fails = lists:filtermap(fun({_, true}) -> false;
-                               ({Prop, false}) -> {true, Prop} end,
-                            Results),
-    case Fails of
-        [] ->
-            ok;
-        _ ->
-            {error, Fails}
-    end.
 
 test_state(State) ->
     ErlOpts = rebar_state:get(State, eunit_compile_opts, []),
@@ -405,11 +394,30 @@ maybe_keep_testing_time(Opts) ->
 testing_time_available() ->
     lists:keymember(testing_time, 1, eqc:module_info(exports)).
 
-handle_results(ok) -> ok;
-handle_results(error) ->
-    {error, unknown_error};
-handle_results({error, FailedProps}) ->
-    {error, {properties_failed, lists:flatten(FailedProps)}}.
+filter_passes(Results) ->
+    FilterFun = fun({_, true}) -> false;
+                   (_)         -> true
+                end,
+    lists:filter(FilterFun, Results).
+
+handle_results(Results) ->
+    case filter_passes(Results) of
+        [] ->
+            ok;
+        Fails ->
+            write_counterexamples(Fails),
+            {FailedProps, _} = lists:unzip(Fails),
+            {error, {properties_failed, lists:flatten(FailedProps)}}
+    end.
+
+write_counterexamples(Fails) ->
+    filelib:ensure_dir(".eqc/dummy"),
+    [write_counterexample(Fail) || Fail <- Fails],
+    ok.
+
+write_counterexample({Property, CounterEx}) ->
+    Filename = [".eqc/", atom_to_list(Property), "_counterexample.eqc"],
+    file:write_file(Filename, term_to_binary(CounterEx)).
 
 eqc_opts(_State) ->
     [
