@@ -60,6 +60,7 @@ format_error({properties_failed, FailedProps}) ->
 
 do_tests(State, EqcOpts, _Tests) ->
     {EqcFun, TestQuantity} = numtests_or_testing_time(EqcOpts),
+    CounterExMode = lists:member({counterexample, true}, EqcOpts),
 
     ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
 
@@ -68,15 +69,50 @@ do_tests(State, EqcOpts, _Tests) ->
                               test_modules(ProjectApps,
                                            proplists:get_value(dir, EqcOpts))),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
-    ExecuteFun = execute_property_fun(EqcFun, TestQuantity, AllProps),
-    case handle_results(lists:foldl(ExecuteFun, [], Properties)) of
+    ExecuteFun = execute_property_fun(EqcFun, TestQuantity, AllProps, CounterExMode),
+    case handle_results(lists:foldl(ExecuteFun, [], Properties), CounterExMode) of
         {error, Reason} ->
             ?PRV_ERROR(Reason);
         ok ->
             {ok, State}
     end.
 
-execute_property_fun(EqcFun, TestQuantity, AllProps) ->
+read_counterexample(Property) ->
+    Filename = [".eqc/", atom_to_list(Property), "_counterexample.eqc"],
+    case file:read_file(Filename) of
+        {ok, FileBin} ->
+            {ok, binary_to_term(FileBin)};
+        {error, _} ->
+            {error, not_found}
+    end.
+
+execute_property_fun(_EqcFun, _TestQuantity, AllProps, true) ->
+    fun({Module, Property}, Results) ->
+        %% Lookup the counterexample for the property
+        case read_counterexample(Property) of
+            {ok, CounterExample} ->
+                Result = eqc:check(Module:Property(), CounterExample),
+                [{Property, Result} | Results];
+            {error, not_found} ->
+                Results
+        end;
+       (Property, Results) ->
+        case lists:keyfind(Property, 2, AllProps) of
+            {Module, Property} ->
+                case read_counterexample(Property) of
+                    {ok, CounterExample} ->
+                        Result = eqc:check(Module:Property(), CounterExample),
+                        [{Property, Result} | Results];
+                    {error, not_found} ->
+                        Results
+                end;
+            false ->
+                %% TODO: Add some error handling for when specified
+                %% properties are not found
+                [{Property, true} | Results]
+        end
+    end;
+execute_property_fun(EqcFun, TestQuantity, AllProps, false) ->
     fun({Module, Property}, Results) ->
         Result = eqc:counterexample(eqc:EqcFun(TestQuantity, Module:Property())),
         [{Property, Result} | Results];
@@ -400,7 +436,15 @@ filter_passes(Results) ->
                 end,
     lists:filter(FilterFun, Results).
 
-handle_results(Results) ->
+handle_results(Results, true) ->
+    case filter_passes(Results) of
+        [] ->
+            ok;
+        Fails ->
+            {FailedProps, _} = lists:unzip(Fails),
+            {error, {properties_failed, lists:flatten(FailedProps)}}
+    end;
+handle_results(Results, false) ->
     case filter_passes(Results) of
         [] ->
             ok;
@@ -423,16 +467,22 @@ eqc_opts(_State) ->
     [
      {numtests, $n, "numtests", integer, help(numtests)},
      {testing_time, $t, "testtime", integer, help(testing_time)},
-     {properties, $p, "properties", string, help(properties)}
+     {properties, $p, "properties", string, help(properties)},
+     {counterexample, $c, "counterexample", boolean, help(counterexample)}
     ].
 
-help(numtests) -> "The number of times to execute each property";
-help(testing_time) -> "Time (secs) to spend executing each property. "
-                         "The testtime and numtests options are "
-                         "mutually exclusive. If both are specified "
-                         "numtests is used. Use of this option requires "
-                         "the full version of EQC.";
-help(properties) -> "The list of properties to run".
+help(numtests)       -> "The number of times to execute each property";
+help(testing_time)   -> "Time (secs) to spend executing each property. "
+                            "The testtime and numtests options are "
+                            "mutually exclusive. If both are specified "
+                            "numtests is used. Use of this option requires "
+                            "the full version of EQC.";
+help(properties)     -> "The list of properties to run";
+help(counterexample) -> "Set counterexample mode. A counterexample is used to "
+                            "test each property for the test run if one is "
+                            "available. If no counterexample exists for a "
+                            "property that is part of a counterexample mode "
+                            "test run that property is skipped.".
 
 retarget_path(State, Path) ->
     ProjectApps = rebar_state:project_apps(State),
