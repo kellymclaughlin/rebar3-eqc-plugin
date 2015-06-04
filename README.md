@@ -8,10 +8,11 @@ command. For a property to be found and executed by the plugin it must
 use the `prop_*` naming convention and be exported from the module in
 which it resides. Otherwise, the property name may be given using the
 `--properties` option. The number of times each property is executed
-is configurable as shown in the Configuration and Usage sections below
-with the default being 100 times. For users of the full version of EQC
-it is also possible to have each property execute for a certain period
-of time as opposed to a fixed number of iterations per property.
+is configurable as shown in the `Configuration` and `Usage` sections
+below with the default being 100 times. For users of the full version
+of EQC it is also possible to have each property execute for a certain
+period of time as opposed to a fixed number of iterations per
+property.
 
 The plugin takes the approach of executing EQC properties directly as
 opposed to the common pattern of indirect execution via another test
@@ -29,6 +30,16 @@ comma-separated list of properties to be executed. List entries may be
 of the form `ModuleName:PropertyName` or simply `PropertyName` if the
 property name is unique within the project.
 
+The plugin also has a counterexample mode. When a property fails when
+run using the plugin a counterexample file is written to an `.eqc`
+sub-directory in the project directory. The counterexample files are
+named for the properties that generate them. This allows for
+rechecking a set of properties using their respective counterexample
+files except in cases where a project has properties sharing the same
+name in different modules. The `--properties` option may also be used
+with counterexample mode to recheck a specific property or set of
+properties.
+
 ## Configuration
 
 First, configure the plugin by adding the following to the
@@ -36,7 +47,7 @@ rebar.config file:
 
 ```
 {plugins, [
-    {rebar_prv_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar_prv_eqc.git", {tag, "0.0.1"}}}
+    {rebar_prv_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar_prv_eqc.git", {tag, "0.0.3"}}}
 ]}.
 
 ```
@@ -58,6 +69,10 @@ The `numtests` and `testing_time` options are mutually exclusive. If
 both are specified, the `testing_time` setting is ignored.
 
 ## Usage
+
+To view the plugin usage menu with a full list of options and their
+descriptions use `./rebar3 help eqc`. The following are some example
+scenarios of plugin usage.
 
 Execute each property the configured number of times or for the
 configured duration:

@@ -39,7 +39,6 @@ init(State) ->
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
     eqc:start(),
-    ?INFO("Running EQC tests...", []),
     EqcOpts = resolve_eqc_opts(State),
     case prepare_tests(State, EqcOpts) of
         {ok, Tests} ->
@@ -60,6 +59,7 @@ format_error({properties_failed, FailedProps}) ->
 
 do_tests(State, EqcOpts, _Tests) ->
     {EqcFun, TestQuantity} = numtests_or_testing_time(EqcOpts),
+    CounterExMode = lists:member({counterexample, true}, EqcOpts),
 
     ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
 
@@ -68,22 +68,66 @@ do_tests(State, EqcOpts, _Tests) ->
                               test_modules(ProjectApps,
                                            proplists:get_value(dir, EqcOpts))),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
-    ExecuteFun = execute_property_fun(EqcFun, TestQuantity, AllProps),
-    case handle_results(make_result(lists:foldl(ExecuteFun, [], Properties))) of
+    TestFun =
+        case CounterExMode of
+            true ->
+                ?INFO("Rechecking EQC counterexamples...", []),
+                recheck_fun(AllProps);
+            false ->
+                ?INFO("Running EQC tests...", []),
+                execute_property_fun(EqcFun, TestQuantity, AllProps)
+        end,
+    case handle_results(lists:foldl(TestFun, [], Properties), CounterExMode) of
         {error, Reason} ->
             ?PRV_ERROR(Reason);
         ok ->
             {ok, State}
     end.
 
+read_counterexample(Property) ->
+    Filename = [".eqc/", atom_to_list(Property), "_counterexample.eqc"],
+    case file:read_file(Filename) of
+        {ok, FileBin} ->
+            {ok, binary_to_term(FileBin)};
+        {error, _} ->
+            {error, not_found}
+    end.
+
+recheck_fun(AllProps) ->
+    fun({Module, Property}, Results) ->
+        %% Lookup the counterexample for the property
+        case read_counterexample(Property) of
+            {ok, CounterExample} ->
+                Result = eqc:check(Module:Property(), CounterExample),
+                [{Property, Result} | Results];
+            {error, not_found} ->
+                Results
+        end;
+       (Property, Results) ->
+        case lists:keyfind(Property, 2, AllProps) of
+            {Module, Property} ->
+                case read_counterexample(Property) of
+                    {ok, CounterExample} ->
+                        Result = eqc:check(Module:Property(), CounterExample),
+                        [{Property, Result} | Results];
+                    {error, not_found} ->
+                        Results
+                end;
+            false ->
+                %% TODO: Add some error handling for when specified
+                %% properties are not found
+                [{Property, true} | Results]
+        end
+    end.
+
 execute_property_fun(EqcFun, TestQuantity, AllProps) ->
     fun({Module, Property}, Results) ->
-        Result = eqc:quickcheck(eqc:EqcFun(TestQuantity, Module:Property())),
+        Result = eqc:counterexample(eqc:EqcFun(TestQuantity, Module:Property())),
         [{Property, Result} | Results];
        (Property, Results) ->
         case lists:keyfind(Property, 2, AllProps) of
             {Module, Property} ->
-                Result = eqc:quickcheck(eqc:EqcFun(TestQuantity,
+                Result = eqc:counterexample(eqc:EqcFun(TestQuantity,
                                                    Module:Property())),
                 [{Property, Result} | Results];
             false ->
@@ -131,17 +175,6 @@ property_filter_fun(Module) ->
 -spec app_names([rebar_app_info:t()]) -> [atom()].
 app_names(Apps) ->
     [binary_to_atom(rebar_app_info:name(A), unicode) || A <- Apps].
-
-make_result(Results) ->
-    Fails = lists:filtermap(fun({_, true}) -> false;
-                               ({Prop, false}) -> {true, Prop} end,
-                            Results),
-    case Fails of
-        [] ->
-            ok;
-        _ ->
-            {error, Fails}
-    end.
 
 test_state(State) ->
     ErlOpts = rebar_state:get(State, eunit_compile_opts, []),
@@ -405,26 +438,59 @@ maybe_keep_testing_time(Opts) ->
 testing_time_available() ->
     lists:keymember(testing_time, 1, eqc:module_info(exports)).
 
-handle_results(ok) -> ok;
-handle_results(error) ->
-    {error, unknown_error};
-handle_results({error, FailedProps}) ->
-    {error, {properties_failed, lists:flatten(FailedProps)}}.
+filter_passes(Results) ->
+    FilterFun = fun({_, true}) -> false;
+                   (_)         -> true
+                end,
+    lists:filter(FilterFun, Results).
+
+handle_results(Results, true) ->
+    case filter_passes(Results) of
+        [] ->
+            ok;
+        Fails ->
+            {FailedProps, _} = lists:unzip(Fails),
+            {error, {properties_failed, lists:flatten(FailedProps)}}
+    end;
+handle_results(Results, false) ->
+    case filter_passes(Results) of
+        [] ->
+            ok;
+        Fails ->
+            write_counterexamples(Fails),
+            {FailedProps, _} = lists:unzip(Fails),
+            {error, {properties_failed, lists:flatten(FailedProps)}}
+    end.
+
+write_counterexamples(Fails) ->
+    filelib:ensure_dir(".eqc/dummy"),
+    [write_counterexample(Fail) || Fail <- Fails],
+    ok.
+
+write_counterexample({Property, CounterEx}) ->
+    Filename = [".eqc/", atom_to_list(Property), "_counterexample.eqc"],
+    file:write_file(Filename, term_to_binary(CounterEx)).
 
 eqc_opts(_State) ->
     [
      {numtests, $n, "numtests", integer, help(numtests)},
      {testing_time, $t, "testtime", integer, help(testing_time)},
-     {properties, $p, "properties", string, help(properties)}
+     {properties, $p, "properties", string, help(properties)},
+     {counterexample, $c, "counterexample", boolean, help(counterexample)}
     ].
 
-help(numtests) -> "The number of times to execute each property";
-help(testing_time) -> "Time (secs) to spend executing each property. "
-                         "The testtime and numtests options are "
-                         "mutually exclusive. If both are specified "
-                         "numtests is used. Use of this option requires "
-                         "the full version of EQC.";
-help(properties) -> "The list of properties to run".
+help(numtests)       -> "The number of times to execute each property";
+help(testing_time)   -> "Time (secs) to spend executing each property. "
+                            "The testtime and numtests options are "
+                            "mutually exclusive. If both are specified "
+                            "numtests is used. Use of this option requires "
+                            "the full version of EQC.";
+help(properties)     -> "The list of properties to run";
+help(counterexample) -> "Set counterexample mode. A counterexample is used to "
+                            "test each property for the test run if one is "
+                            "available. If no counterexample exists for a "
+                            "property that is part of a counterexample mode "
+                            "test run that property is skipped.".
 
 retarget_path(State, Path) ->
     ProjectApps = rebar_state:project_apps(State),
