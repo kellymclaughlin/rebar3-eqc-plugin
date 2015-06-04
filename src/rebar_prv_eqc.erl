@@ -39,7 +39,6 @@ init(State) ->
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
     eqc:start(),
-    ?INFO("Running EQC tests...", []),
     EqcOpts = resolve_eqc_opts(State),
     case prepare_tests(State, EqcOpts) of
         {ok, Tests} ->
@@ -69,8 +68,16 @@ do_tests(State, EqcOpts, _Tests) ->
                               test_modules(ProjectApps,
                                            proplists:get_value(dir, EqcOpts))),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
-    ExecuteFun = execute_property_fun(EqcFun, TestQuantity, AllProps, CounterExMode),
-    case handle_results(lists:foldl(ExecuteFun, [], Properties), CounterExMode) of
+    TestFun =
+        case CounterExMode of
+            true ->
+                ?INFO("Rechecking EQC counterexamples...", []),
+                recheck_fun(AllProps);
+            false ->
+                ?INFO("Running EQC tests...", []),
+                execute_property_fun(EqcFun, TestQuantity, AllProps)
+        end,
+    case handle_results(lists:foldl(TestFun, [], Properties), CounterExMode) of
         {error, Reason} ->
             ?PRV_ERROR(Reason);
         ok ->
@@ -86,7 +93,7 @@ read_counterexample(Property) ->
             {error, not_found}
     end.
 
-execute_property_fun(_EqcFun, _TestQuantity, AllProps, true) ->
+recheck_fun(AllProps) ->
     fun({Module, Property}, Results) ->
         %% Lookup the counterexample for the property
         case read_counterexample(Property) of
@@ -111,8 +118,9 @@ execute_property_fun(_EqcFun, _TestQuantity, AllProps, true) ->
                 %% properties are not found
                 [{Property, true} | Results]
         end
-    end;
-execute_property_fun(EqcFun, TestQuantity, AllProps, false) ->
+    end.
+
+execute_property_fun(EqcFun, TestQuantity, AllProps) ->
     fun({Module, Property}, Results) ->
         Result = eqc:counterexample(eqc:EqcFun(TestQuantity, Module:Property())),
         [{Property, Result} | Results];
