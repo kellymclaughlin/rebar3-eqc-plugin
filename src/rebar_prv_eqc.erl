@@ -26,7 +26,7 @@ init(State) ->
     Provider = providers:create([{name, ?PROVIDER},
                                  {module, ?MODULE},
                                  {deps, ?DEPS},
-                                 {bare, false},
+                                 {bare, true},
                                  {example, "rebar3 eqc"},
                                  {short_desc, "Run EQC properties."},
                                  {desc, ""},
