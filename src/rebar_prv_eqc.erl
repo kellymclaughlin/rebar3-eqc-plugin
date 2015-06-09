@@ -38,6 +38,8 @@ init(State) ->
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
+    rebar_utils:update_code(rebar_state:code_paths(State, all_deps)),
+
     eqc:start(),
     EqcOpts = resolve_eqc_opts(State),
     case prepare_tests(State, EqcOpts) of
