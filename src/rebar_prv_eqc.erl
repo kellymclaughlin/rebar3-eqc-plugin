@@ -13,8 +13,6 @@
 
 -define(PROVIDER, eqc).
 -define(DEPS, [compile]).
--define(INFO(Str, Args), rebar_log:log(info, Str, Args)).
--define(DEBUG(Str, Args), rebar_log:log(debug, Str, Args)).
 -define(PRV_ERROR(Reason), {error, {?MODULE, Reason}}).
 
 %% ===================================================================
@@ -73,10 +71,10 @@ do_tests(State, EqcOpts, _Tests) ->
     TestFun =
         case CounterExMode of
             true ->
-                ?INFO("Rechecking EQC counterexamples...", []),
+                rebar_api:console("Rechecking EQC counterexamples...~n", []),
                 recheck_fun(AllProps);
             false ->
-                ?INFO("Running EQC tests...", []),
+                rebar_api:console("Running EQC tests...~n", []),
                 execute_property_fun(EqcFun, TestQuantity, AllProps)
         end,
     case handle_results(lists:foldl(TestFun, [], Properties), CounterExMode) of
