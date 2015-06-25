@@ -1,6 +1,6 @@
 {application, rebar_prv_eqc, [
   {description, "Plugin to run EQC properties"},
-  {vsn, "0.0.3"},
+  {vsn, "0.0.4"},
   {registered, []},
   {applications, [kernel, stdlib]},
   {env, []},
