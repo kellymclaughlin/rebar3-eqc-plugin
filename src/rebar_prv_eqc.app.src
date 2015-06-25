@@ -3,5 +3,9 @@
   {vsn, "0.0.3"},
   {registered, []},
   {applications, [kernel, stdlib]},
-  {env, []}
+  {env, []},
+
+  {contributors, ["Kelly McLaughlin "]},
+  {licenses, ["Apache"]},
+  {links, [{"Github", "https://github.com/kellymclaughlin/rebar3-eqc-plugin"}]}
 ]}.
