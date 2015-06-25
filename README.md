@@ -47,7 +47,7 @@ rebar.config file:
 
 ```
 {plugins, [
-    {rebar_prv_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar_prv_eqc.git", {tag, "0.0.3"}}}
+    {rebar3_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar3_eqc.git", {tag, "0.0.3"}}}
 ]}.
 
 ```
