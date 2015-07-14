@@ -309,12 +309,24 @@ project_tests(ProjectApp, TestDir) ->
     Path = filename:join(rebar_app_info:dir(ProjectApp), TestDir),
     case file:list_dir(Path) of
         {ok, Files} ->
-            Modules = [list_to_atom(filename:rootname(File)) || File <- Files],
+            Modules = [list_to_atom(filename:rootname(File))
+                       || File <- Files,
+                          is_valid_erl_file(File)],
             load_files(Modules),
             Modules;
         {error, _} ->
             []
     end.
+
+is_valid_erl_file([]) ->
+    false;
+is_valid_erl_file(File) ->
+    hd(File) =/= $.
+        andalso hd(File) =/= $#
+        andalso filename:extension(File) =:= ".erl"
+        andalso tl(File) =/= $~
+        andalso string:str(File, "flymake") =:= 0
+        andalso string:str(File, "flycheck") =:= 0.
 
 load_files(Modules) ->
     [code:ensure_loaded(Module) || Module <- Modules].
