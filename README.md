@@ -40,14 +40,21 @@ name in different modules. The `--properties` option may also be used
 with counterexample mode to recheck a specific property or set of
 properties.
 
-## Configuration
+## Installation
 
-First, configure the plugin by adding the following to the
-rebar.config file:
+To install the plugin using the Hex package manaage, add the following
+to the rebar.config file:
+
+```
+{plugins, [rebar3_eqc]}
+```
+
+Alternatively, to install the plugin from github use the following:
+
 
 ```
 {plugins, [
-    {rebar3_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar3-eqc-plugin.git", {tag, "0.0.5"}}}
+    {rebar3_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar3-eqc-plugin.git", {tag, "0.0.6"}}}
 ]}.
 
 ```
