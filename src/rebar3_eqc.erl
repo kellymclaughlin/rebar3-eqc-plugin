@@ -68,6 +68,14 @@ do_tests(State, EqcOpts, _Tests) ->
                               test_modules(ProjectApps,
                                            proplists:get_value(dir, EqcOpts))),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
+    {Opts, _} = rebar_state:command_parsed_args(State),
+
+    OutputFun = case proplists:get_value(coloured, Opts) of
+                    true ->
+                        fun coloured_output/2;
+                    _ ->
+                        fun normal_output/2
+                end,
     TestFun =
         case CounterExMode of
             true ->
@@ -75,7 +83,7 @@ do_tests(State, EqcOpts, _Tests) ->
                 recheck_fun(AllProps);
             false ->
                 rebar_api:console("Running EQC tests...~n", []),
-                execute_property_fun(EqcFun, TestQuantity, AllProps)
+                execute_property_fun(EqcFun, OutputFun, TestQuantity, AllProps)
         end,
     case handle_results(lists:foldl(TestFun, [], Properties), CounterExMode) of
         {error, Reason} ->
@@ -83,6 +91,18 @@ do_tests(State, EqcOpts, _Tests) ->
         ok ->
             {ok, State}
     end.
+
+coloured_output(".", []) ->
+    io:fwrite(user, <<"\e[0;32m*\e[0m">>, []);
+coloured_output("x", []) ->
+    io:format(user, <<"\e[0;33mx\e[0m">>, []);
+coloured_output("Failed! ", []) ->
+    io:format(user, <<"\e[0;31mFailed! \e[0m">>, []);
+coloured_output(S, F) ->
+    io:format(user, S, F).
+
+normal_output(S,F) ->
+    io:fwrite(user, S, F).
 
 read_counterexample(Property) ->
     Filename = [".eqc/", atom_to_list(Property), "_counterexample.eqc"],
@@ -120,15 +140,18 @@ recheck_fun(AllProps) ->
         end
     end.
 
-execute_property_fun(EqcFun, TestQuantity, AllProps) ->
+execute_property_fun(EqcFun, OutputFun, TestQuantity, AllProps) ->
     fun({Module, Property}, Results) ->
-        Result = eqc:counterexample(eqc:EqcFun(TestQuantity, Module:Property())),
-        [{Property, Result} | Results];
+        Result = eqc:counterexample(
+                   eqc:EqcFun(TestQuantity,
+                              on_output(OutputFun, Module:Property()))),
+            [{Property, Result} | Results];
        (Property, Results) ->
         case lists:keyfind(Property, 2, AllProps) of
             {Module, Property} ->
-                Result = eqc:counterexample(eqc:EqcFun(TestQuantity,
-                                                   Module:Property())),
+                Result = eqc:counterexample(
+                           eqc:EqcFun(TestQuantity,
+                                      on_output(OutputFun, Module:Property()))),
                 [{Property, Result} | Results];
             false ->
                 %% TODO: Add some error handling for when specified
@@ -488,9 +511,10 @@ eqc_opts(_State) ->
      {numtests, $n, "numtests", integer, help(numtests)},
      {testing_time, $t, "testtime", integer, help(testing_time)},
      {properties, $p, "properties", string, help(properties)},
-     {counterexample, $c, "counterexample", boolean, help(counterexample)}
+     {counterexample, $c, "counterexample", boolean, help(counterexample)},
+     {coloured, $x, "coloured", boolean, help(coloured)}
     ].
-
+help(coloured)           -> "Renders output coloured and colofrul";
 help(numtests)       -> "The number of times to execute each property";
 help(testing_time)   -> "Time (secs) to spend executing each property. "
                             "The testtime and numtests options are "
