@@ -71,12 +71,7 @@ do_tests(State, EqcOpts, _Tests) ->
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
     {Opts, _} = rebar_state:command_parsed_args(State),
 
-    OutputFun = case proplists:get_value(coloured, Opts) of
-                    true ->
-                        fun coloured_output/2;
-                    _ ->
-                        fun normal_output/2
-                end,
+    Coloured = proplists:get_value(coloured, Opts),
     TestFun =
         case CounterExMode of
             true ->
@@ -84,7 +79,7 @@ do_tests(State, EqcOpts, _Tests) ->
                 recheck_fun(AllProps);
             false ->
                 rebar_api:console("Running EQC tests...~n", []),
-                execute_property_fun(EqcFun, OutputFun, TestQuantity, AllProps)
+                execute_property_fun(EqcFun, Coloured, TestQuantity, AllProps)
         end,
     case handle_results(lists:foldl(TestFun, [], Properties), CounterExMode) of
         {error, Reason} ->
@@ -141,9 +136,20 @@ recheck_fun(AllProps) ->
         end
     end.
 
-execute_property_fun(EqcFun, OutputFun, TestQuantity, AllProps) ->
+execute_property_fun(EqcFun, Coloured, TestQuantity, AllProps) ->
+    OutputFun = case Coloured of
+                    true ->
+                        fun coloured_output/2;
+                    _ ->
+                        fun normal_output/2
+                end,
     fun({Module, Property}, Results) ->
-        rebar_api:console("===== ~s:~s", [Module, Property]),
+        case Coloured of
+            true ->
+                rebar_api:console("~n\e[0;34m=====\e[0m ~s:\e[1;37m~s\e[0m", [Module, Property]);
+            _ ->
+                rebar_api:console("~n===== ~s:~s", [Module, Property])
+        end,
         Result = eqc:counterexample(
                    eqc:EqcFun(TestQuantity,
                               on_output(OutputFun, Module:Property()))),
