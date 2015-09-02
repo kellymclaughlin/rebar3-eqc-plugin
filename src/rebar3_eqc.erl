@@ -143,6 +143,7 @@ recheck_fun(AllProps) ->
 
 execute_property_fun(EqcFun, OutputFun, TestQuantity, AllProps) ->
     fun({Module, Property}, Results) ->
+        rebar_api:console("===== ~s:~s", [Module, Property]),
         Result = eqc:counterexample(
                    eqc:EqcFun(TestQuantity,
                               on_output(OutputFun, Module:Property()))),
