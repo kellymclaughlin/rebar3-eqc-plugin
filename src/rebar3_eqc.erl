@@ -64,9 +64,10 @@ do_tests(State, EqcOpts, _Tests) ->
     ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
 
     ProjectApps = project_apps(State),
-    AllProps = properties(app_modules(app_names(ProjectApps), []) ++
-                              test_modules(ProjectApps,
-                                           proplists:get_value(dir, EqcOpts))),
+    AllPropsRaw = properties(app_modules(app_names(ProjectApps), []) ++
+                                 test_modules(ProjectApps,
+                                              proplists:get_value(dir, EqcOpts))),
+    AllProps = lists:usort(AllPropsRaw),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
     {Opts, _} = rebar_state:command_parsed_args(State),
 
