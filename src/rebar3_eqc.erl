@@ -89,13 +89,13 @@ do_tests(State, EqcOpts, _Tests) ->
     end.
 
 coloured_output(".", []) ->
-    io:fwrite(user, <<"\e[0;32m*\e[0m">>, []);
+    cf:print("~!g*");
 coloured_output("x", []) ->
-    io:format(user, <<"\e[0;33mx\e[0m">>, []);
+    cf:print("~!y*");
 coloured_output("Failed! ", []) ->
-    io:format(user, <<"\e[0;31mFailed!\e[0m ">>, []);
+    cf:print("~!rFailed! ");
 coloured_output(S, F) ->
-    io:format(user, S, F).
+    io:format(S, F).
 
 normal_output(S,F) ->
     io:fwrite(user, S, F).
@@ -146,9 +146,9 @@ execute_property_fun(EqcFun, Plain, TestQuantity, AllProps) ->
     fun({Module, Property}, Results) ->
         case Plain of
             true ->
-                rebar_api:console("~n===== ~s:~s", [Module, Property]);
+                cf:print("~n===== ~s:~s~n", [Module, Property]);
             _ ->
-                rebar_api:console("~n\e[0;34m=====\e[0m ~s:\e[1;37m~s\e[0m", [Module, Property])
+                cf:print("~n~!b=====~!! ~s:~!^~s~n", [Module, Property])
         end,
         Result = eqc:counterexample(
                    eqc:EqcFun(TestQuantity,

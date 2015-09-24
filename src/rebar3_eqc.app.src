@@ -2,7 +2,7 @@
   {description, "Plugin to run EQC properties"},
   {vsn, "0.0.6"},
   {registered, []},
-  {applications, [kernel, stdlib]},
+  {applications, [kernel, stdlib, cf]},
   {env, []},
 
   {contributors, ["Kelly McLaughlin "]},
