@@ -244,7 +244,7 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
     F = fun(AppInfo) ->
         NewState = replace_src_dirs(State, ["eqc"]),
         ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
-                                         rebar_dir:base_dir(State),
+                                         rebar_app_info:dir(AppInfo),
                                          ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
     end,
     lists:foreach(F, TestApps),
