@@ -71,7 +71,7 @@ do_tests(State, EqcOpts, _Tests) ->
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
     {Opts, _} = rebar_state:command_parsed_args(State),
 
-    Coloured = proplists:get_value(coloured, Opts),
+    Plain = proplists:get_value(plain, Opts),
     TestFun =
         case CounterExMode of
             true ->
@@ -79,7 +79,7 @@ do_tests(State, EqcOpts, _Tests) ->
                 recheck_fun(AllProps);
             false ->
                 rebar_api:console("Running EQC tests...~n", []),
-                execute_property_fun(EqcFun, Coloured, TestQuantity, AllProps)
+                execute_property_fun(EqcFun, Plain, TestQuantity, AllProps)
         end,
     case handle_results(lists:foldl(TestFun, [], Properties), CounterExMode) of
         {error, Reason} ->
@@ -136,19 +136,19 @@ recheck_fun(AllProps) ->
         end
     end.
 
-execute_property_fun(EqcFun, Coloured, TestQuantity, AllProps) ->
-    OutputFun = case Coloured of
+execute_property_fun(EqcFun, Plain, TestQuantity, AllProps) ->
+    OutputFun = case Plain of
                     true ->
-                        fun coloured_output/2;
+                        fun normal_output/2;
                     _ ->
-                        fun normal_output/2
+                        fun coloured_output/2
                 end,
     fun({Module, Property}, Results) ->
-        case Coloured of
+        case Plain of
             true ->
-                rebar_api:console("~n\e[0;34m=====\e[0m ~s:\e[1;37m~s\e[0m", [Module, Property]);
+                rebar_api:console("~n===== ~s:~s", [Module, Property]);
             _ ->
-                rebar_api:console("~n===== ~s:~s", [Module, Property])
+                rebar_api:console("~n\e[0;34m=====\e[0m ~s:\e[1;37m~s\e[0m", [Module, Property])
         end,
         Result = eqc:counterexample(
                    eqc:EqcFun(TestQuantity,
@@ -514,9 +514,9 @@ eqc_opts(_State) ->
      {testing_time, $t, "testtime", integer, help(testing_time)},
      {properties, $p, "properties", string, help(properties)},
      {counterexample, $c, "counterexample", boolean, help(counterexample)},
-     {coloured, $x, "coloured", boolean, help(coloured)}
+     {plain, $x, "plain", boolean, help(plain)}
     ].
-help(coloured)           -> "Renders output coloured and colofrul";
+help(plain)          -> "Renders output in teh classical plain b/w";
 help(numtests)       -> "The number of times to execute each property";
 help(testing_time)   -> "Time (secs) to spend executing each property. "
                             "The testtime and numtests options are "
