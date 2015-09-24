@@ -93,7 +93,7 @@ coloured_output(".", []) ->
 coloured_output("x", []) ->
     cf:print("~!y*");
 coloured_output("Failed! ", []) ->
-    cf:print("~!rFailed! ");
+    cf:print("~!rFailed! ~!!(╯°□°）╯︵ ┻━┻ ");
 coloured_output(S, F) ->
     io:format(S, F).
 
@@ -150,16 +150,20 @@ execute_property_fun(EqcFun, Plain, TestQuantity, AllProps) ->
             _ ->
                 cf:print("~n~!b=====~!! ~s:~!^~s~n", [Module, Property])
         end,
+        io:setopts([{encoding, unicode}]),
         Result = eqc:counterexample(
                    eqc:EqcFun(TestQuantity,
                               on_output(OutputFun, Module:Property()))),
-            [{Property, Result} | Results];
+        io:setopts([{encoding, latin1}]),
+        [{Property, Result} | Results];
        (Property, Results) ->
         case lists:keyfind(Property, 2, AllProps) of
             {Module, Property} ->
+                io:setopts([{encoding, unicode}]),
                 Result = eqc:counterexample(
                            eqc:EqcFun(TestQuantity,
                                       on_output(OutputFun, Module:Property()))),
+                io:setopts([{encoding, latin1}]),
                 [{Property, Result} | Results];
             false ->
                 %% TODO: Add some error handling for when specified
