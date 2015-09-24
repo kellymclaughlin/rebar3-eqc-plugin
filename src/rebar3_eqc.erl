@@ -93,7 +93,7 @@ coloured_output(".", []) ->
 coloured_output("x", []) ->
     io:format(user, <<"\e[0;33mx\e[0m">>, []);
 coloured_output("Failed! ", []) ->
-    io:format(user, <<"\e[0;31mFailed! \e[0m">>, []);
+    io:format(user, <<"\e[0;31mFailed!\e[0m ">>, []);
 coloured_output(S, F) ->
     io:format(user, S, F).
 
@@ -275,7 +275,7 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
     F = fun(AppInfo) ->
         NewState = replace_src_dirs(State, ["eqc"]),
         ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
-                                         rebar_dir:base_dir(State),
+                                         rebar_app_info:dir(AppInfo),
                                          ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
     end,
     lists:foreach(F, TestApps),
