@@ -70,11 +70,11 @@ do_tests(State, EqcOpts, _Tests) ->
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
     {Opts, _} = rebar_state:command_parsed_args(State),
 
-    OutputFun = case proplists:get_value(coloured, Opts) of
+    OutputFun = case proplists:get_value(plain, Opts) of
                     true ->
-                        fun coloured_output/2;
+                        fun normal_output/2;
                     _ ->
-                        fun normal_output/2
+                        fun coloured_output/2
                 end,
     TestFun =
         case CounterExMode of
@@ -512,9 +512,9 @@ eqc_opts(_State) ->
      {testing_time, $t, "testtime", integer, help(testing_time)},
      {properties, $p, "properties", string, help(properties)},
      {counterexample, $c, "counterexample", boolean, help(counterexample)},
-     {coloured, $x, "coloured", boolean, help(coloured)}
+     {plain, $x, "plain", boolean, help(plain)}
     ].
-help(coloured)           -> "Renders output coloured and colofrul";
+help(plain)          -> "Renders output in teh classical plain b/w";
 help(numtests)       -> "The number of times to execute each property";
 help(testing_time)   -> "Time (secs) to spend executing each property. "
                             "The testtime and numtests options are "
