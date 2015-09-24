@@ -273,14 +273,6 @@ copy_and_compile_test_dirs(State, Opts, Dirs) when is_list(Dirs) ->
 compile_tests(State, TestApps, Suites, RawOpts) ->
     copy_and_compile_test_dirs(State, RawOpts),
     F = fun(AppInfo) ->
-        AppDir = rebar_app_info:dir(AppInfo),
-        %% S = case rebar_app_info:state(AppInfo) of
-        %%     undefined ->
-        %%         C = rebar_config:consult(AppDir),
-        %%         rebar_state:new(State, C, AppDir);
-        %%     AppState ->
-        %%         AppState
-        %% end,
         NewState = replace_src_dirs(State, ["eqc"]),
         ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
                                          rebar_dir:base_dir(State),
