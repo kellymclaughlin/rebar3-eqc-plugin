@@ -278,7 +278,7 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
     copy_and_compile_test_dirs(State, RawOpts),
     F = fun(AppInfo) ->
         NewState = replace_src_dirs(State, ["eqc"]),
-        ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
+        ok = rebar_erlc_compiler:compile(NewState,
                                          rebar_app_info:dir(AppInfo),
                                          ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
     end,
@@ -304,7 +304,7 @@ copy(State, Target) ->
 
 compile_dir(State, Dir) ->
     NewState = replace_src_dirs(State, [Dir]),
-    ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
+    ok = rebar_erlc_compiler:compile(NewState,
                                      rebar_dir:base_dir(State),
                                      filename:join(Dir, "../ebin")),
     ok = maybe_cover_compile(State, Dir),
