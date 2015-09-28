@@ -64,10 +64,14 @@ do_tests(State, EqcOpts, _Tests) ->
     ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
 
     ProjectApps = project_apps(State),
-    AllProps = properties(app_modules(app_names(ProjectApps), []) ++
-                              test_modules(ProjectApps,
-                                           proplists:get_value(dir, EqcOpts))),
+    AllPropsRaw = properties(app_modules(app_names(ProjectApps), []) ++
+                                 test_modules(ProjectApps,
+                                              proplists:get_value(dir, EqcOpts))),
+    AllProps = lists:usort(AllPropsRaw),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
+    {Opts, _} = rebar_state:command_parsed_args(State),
+
+    Plain = proplists:get_value(plain, Opts),
     TestFun =
         case CounterExMode of
             true ->
@@ -75,7 +79,7 @@ do_tests(State, EqcOpts, _Tests) ->
                 recheck_fun(AllProps);
             false ->
                 rebar_api:console("Running EQC tests...~n", []),
-                execute_property_fun(EqcFun, TestQuantity, AllProps)
+                execute_property_fun(EqcFun, Plain, TestQuantity, AllProps)
         end,
     case handle_results(lists:foldl(TestFun, [], Properties), CounterExMode) of
         {error, Reason} ->
@@ -83,6 +87,18 @@ do_tests(State, EqcOpts, _Tests) ->
         ok ->
             {ok, State}
     end.
+
+coloured_output(".", []) ->
+    cf:print("~!g*");
+coloured_output("x", []) ->
+    cf:print("~!y*");
+coloured_output("Failed! ", []) ->
+    cf:print("~!rFailed! ~!!(╯°□°）╯︵ ┻━┻ ");
+coloured_output(S, F) ->
+    io:format(S, F).
+
+normal_output(S,F) ->
+    io:fwrite(user, S, F).
 
 read_counterexample(Property) ->
     Filename = [".eqc/", atom_to_list(Property), "_counterexample.eqc"],
@@ -120,15 +136,34 @@ recheck_fun(AllProps) ->
         end
     end.
 
-execute_property_fun(EqcFun, TestQuantity, AllProps) ->
+execute_property_fun(EqcFun, Plain, TestQuantity, AllProps) ->
+    OutputFun = case Plain of
+                    true ->
+                        fun normal_output/2;
+                    _ ->
+                        fun coloured_output/2
+                end,
     fun({Module, Property}, Results) ->
-        Result = eqc:counterexample(eqc:EqcFun(TestQuantity, Module:Property())),
+        case Plain of
+            true ->
+                cf:print("~n===== ~s:~s~n", [Module, Property]);
+            _ ->
+                cf:print("~n~!b=====~!! ~s:~!^~s~n", [Module, Property])
+        end,
+        io:setopts([{encoding, unicode}]),
+        Result = eqc:counterexample(
+                   eqc:EqcFun(TestQuantity,
+                              on_output(OutputFun, Module:Property()))),
+        io:setopts([{encoding, latin1}]),
         [{Property, Result} | Results];
        (Property, Results) ->
         case lists:keyfind(Property, 2, AllProps) of
             {Module, Property} ->
-                Result = eqc:counterexample(eqc:EqcFun(TestQuantity,
-                                                   Module:Property())),
+                io:setopts([{encoding, unicode}]),
+                Result = eqc:counterexample(
+                           eqc:EqcFun(TestQuantity,
+                                      on_output(OutputFun, Module:Property()))),
+                io:setopts([{encoding, latin1}]),
                 [{Property, Result} | Results];
             false ->
                 %% TODO: Add some error handling for when specified
@@ -242,15 +277,9 @@ copy_and_compile_test_dirs(State, Opts, Dirs) when is_list(Dirs) ->
 compile_tests(State, TestApps, Suites, RawOpts) ->
     copy_and_compile_test_dirs(State, RawOpts),
     F = fun(AppInfo) ->
-        AppDir = rebar_app_info:dir(AppInfo),
-        S = case rebar_app_info:state(AppInfo) of
-            undefined ->
-                C = rebar_config:consult(AppDir),
-                rebar_state:new(State, C, AppDir);
-            AppState ->
-                AppState
-        end,
-        ok = rebar_erlc_compiler:compile(replace_src_dirs(S, ["eqc"]),
+        NewState = replace_src_dirs(State, ["eqc"]),
+        ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
+                                         rebar_app_info:dir(AppInfo),
                                          ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
     end,
     lists:foreach(F, TestApps),
@@ -275,7 +304,7 @@ copy(State, Target) ->
 
 compile_dir(State, Dir) ->
     NewState = replace_src_dirs(State, [Dir]),
-    ok = rebar_erlc_compiler:compile(NewState,
+    ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
                                      rebar_dir:base_dir(State),
                                      filename:join(Dir, "../ebin")),
     ok = maybe_cover_compile(State, Dir),
@@ -488,9 +517,10 @@ eqc_opts(_State) ->
      {numtests, $n, "numtests", integer, help(numtests)},
      {testing_time, $t, "testtime", integer, help(testing_time)},
      {properties, $p, "properties", string, help(properties)},
-     {counterexample, $c, "counterexample", boolean, help(counterexample)}
+     {counterexample, $c, "counterexample", boolean, help(counterexample)},
+     {plain, $x, "plain", boolean, help(plain)}
     ].
-
+help(plain)          -> "Renders output in teh classical plain b/w";
 help(numtests)       -> "The number of times to execute each property";
 help(testing_time)   -> "Time (secs) to spend executing each property. "
                             "The testtime and numtests options are "
