@@ -54,7 +54,7 @@ Alternatively, to install the plugin from github use the following:
 
 ```
 {plugins, [
-    {rebar3_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar3-eqc-plugin.git", {tag, "0.0.6"}}}
+    {rebar3_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar3-eqc-plugin.git", {tag, "0.0.7"}}}
 ]}.
 
 ```
