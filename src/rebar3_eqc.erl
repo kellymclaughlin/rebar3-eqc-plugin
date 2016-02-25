@@ -36,6 +36,7 @@ init(State) ->
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
+    setup_name(State),
     rebar_utils:update_code(rebar_state:code_paths(State, all_deps)),
 
     eqc:start(),
@@ -518,9 +519,13 @@ eqc_opts(_State) ->
      {testing_time, $t, "testtime", integer, help(testing_time)},
      {properties, $p, "properties", string, help(properties)},
      {counterexample, $c, "counterexample", boolean, help(counterexample)},
-     {plain, $x, "plain", boolean, help(plain)}
+     {plain, $x, "plain", boolean, help(plain)},
+     {name, undefined, "name", atom, help(name)},
+     {sname, undefined, "sname", atom, help(sname)}
     ].
-help(plain)          -> "Renders output in teh classical plain b/w";
+help(sname)          -> "Run in Erlang node with short name";
+help(name)           -> "Run in Erlang node with long name";
+help(plain)          -> "Renders output in the classical plain b/w";
 help(numtests)       -> "The number of times to execute each property";
 help(testing_time)   -> "Time (secs) to spend executing each property. "
                             "The testtime and numtests options are "
@@ -571,3 +576,23 @@ reduce_path(Acc, ["."|Rest])       -> reduce_path(Acc, Rest);
 reduce_path([_|Acc], [".."|Rest])  -> reduce_path(Acc, Rest);
 reduce_path([], [".."|Rest])       -> reduce_path([], Rest);
 reduce_path(Acc, [Component|Rest]) -> reduce_path([Component|Acc], Rest).
+
+-spec setup_name(rebar_state:t()) -> ok.
+setup_name(State) ->
+    {Opts, _} = rebar_state:command_parsed_args(State),
+    case {proplists:get_value(name, Opts), proplists:get_value(sname, Opts)} of
+        {undefined, undefined} ->
+            ok;
+        {Name, undefined} ->
+            check_epmd(net_kernel:start([Name, longnames]));
+        {undefined, SName} ->
+            check_epmd(net_kernel:start([SName, shortnames]));
+        {_, _} ->
+            rebar_utils:abort("Cannot have both short and long node names defined", [])
+    end.
+
+check_epmd({ok, _}) ->
+    ok;
+check_epmd({error, Reason}) ->
+    rebar_utils:abort("Erlang Distribution failed: ~p. "
+                      "Verify that epmd is running and try again.", [Reason]).
