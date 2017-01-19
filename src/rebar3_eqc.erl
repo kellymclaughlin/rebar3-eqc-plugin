@@ -37,7 +37,7 @@ init(State) ->
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
     setup_name(State),
-    rebar_utils:update_code(rebar_state:code_paths(State, all_deps)),
+    rebar_utils:update_code(rebar_state:code_paths(State, all_deps), [soft_purge]),
 
     eqc:start(),
     EqcOpts = resolve_eqc_opts(State),
@@ -278,14 +278,29 @@ copy_and_compile_test_dirs(State, Opts, Dirs) when is_list(Dirs) ->
 compile_tests(State, TestApps, Suites, RawOpts) ->
     copy_and_compile_test_dirs(State, RawOpts),
     F = fun(AppInfo) ->
-        NewState = replace_src_dirs(State, ["eqc"]),
-        ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
-                                         rebar_app_info:dir(AppInfo),
-                                         ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
-    end,
+                NewState = replace_src_dirs(State, ["eqc"]),
+                TopAppsPaths = app_paths(NewState),
+                rebar_utils:update_code(rebar_state:code_paths(NewState, all_deps)
+                                        -- TopAppsPaths, [soft_purge]),
+                code:add_patha(TopAppsPaths),
+                ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
+                                                 rebar_app_info:dir(AppInfo),
+                                                 ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
+        end,
     lists:foreach(F, TestApps),
+    rebar_utils:update_code(rebar_state:code_paths(State, all_deps), [soft_purge]),
     ok = maybe_cover_compile(State, RawOpts),
+    TopAppsPaths = app_paths(State),
+    rebar_utils:update_code(rebar_state:code_paths(State, all_deps)
+                            -- TopAppsPaths, [soft_purge]),
+    code:add_patha(TopAppsPaths),
+
     {ok, test_set(TestApps, Suites)}.
+
+app_paths(State) ->
+    Apps = rebar_state:project_apps(State),
+    [rebar_app_info:ebin_dir(App) || App <- Apps,
+                                     not rebar_app_info:is_checkout(App)].
 
 
 copy(State, Target) ->
