@@ -282,7 +282,7 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
                 TopAppsPaths = app_paths(NewState),
                 rebar_utils:update_code(rebar_state:code_paths(NewState, all_deps)
                                         -- TopAppsPaths, [soft_purge]),
-                code:add_patha(TopAppsPaths),
+                code:add_pathsa(TopAppsPaths),
                 ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
                                                  rebar_app_info:dir(AppInfo),
                                                  ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
@@ -293,7 +293,7 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
     TopAppsPaths = app_paths(State),
     rebar_utils:update_code(rebar_state:code_paths(State, all_deps)
                             -- TopAppsPaths, [soft_purge]),
-    code:add_patha(TopAppsPaths),
+    code:add_pathsa(TopAppsPaths),
 
     {ok, test_set(TestApps, Suites)}.
 
