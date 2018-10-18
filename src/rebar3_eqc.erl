@@ -29,9 +29,9 @@ init(State) ->
                                  {short_desc, "Run EQC properties."},
                                  {desc, ""},
                                  {opts, eqc_opts(State)},
-                                 {profiles, [eqc]}]),
+                                 {profiles, [test]}]),
     State1 = rebar_state:add_provider(State, Provider),
-    State2 = rebar_state:add_to_profile(State1, eqc, test_state(State1)),
+    State2 = rebar_state:add_to_profile(State1, test, test_state(State1)),
     {ok, State2}.
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
@@ -41,12 +41,27 @@ do(State) ->
 
     eqc:start(),
     EqcOpts = resolve_eqc_opts(State),
+
+    SysConfigs = sys_config_list(EqcOpts),
+    Configs = lists:flatmap(fun(Filename) ->
+                               rebar_file_utils:consult_config(State, Filename)
+                            end, SysConfigs),
+    [application:load(Application) || Config <- Configs, {Application, _} <- Config],
+    rebar_utils:reread_config(Configs, [update_logger]),
+
     case prepare_tests(State, EqcOpts) of
         {ok, Tests} ->
             do_tests(State, EqcOpts, Tests);
         Error ->
             Error
     end.
+
+sys_config_list(Opts) ->
+    %% TODO: add support for command line option
+    proplists:get_value(sys_config, Opts, []).
+
+split_string(String) ->
+    string:tokens(String, [$,]).
 
 -spec format_error(any()) -> iolist().
 format_error(unknown_error) ->
