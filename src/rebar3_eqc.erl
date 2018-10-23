@@ -29,9 +29,9 @@ init(State) ->
                                  {short_desc, "Run EQC properties."},
                                  {desc, ""},
                                  {opts, eqc_opts(State)},
-                                 {profiles, [eqc]}]),
+                                 {profiles, [test]}]),
     State1 = rebar_state:add_provider(State, Provider),
-    State2 = rebar_state:add_to_profile(State1, eqc, test_state(State1)),
+    State2 = rebar_state:add_to_profile(State1, test, test_state(State1)),
     {ok, State2}.
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
@@ -41,11 +41,30 @@ do(State) ->
 
     eqc:start(),
     EqcOpts = resolve_eqc_opts(State),
+
+    SysConfigs = sys_config_list(EqcOpts),
+    Configs = lists:flatmap(fun(Filename) ->
+                               rebar_file_utils:consult_config(State, Filename)
+                            end, SysConfigs),
+    [application:load(Application) || Config <- Configs, {Application, _} <- Config],
+    rebar_utils:reread_config(Configs, [update_logger]),
+
     case prepare_tests(State, EqcOpts) of
         {ok, Tests} ->
             do_tests(State, EqcOpts, Tests);
         Error ->
             Error
+    end.
+
+sys_config_list(Opts) ->
+    %% TODO: add support for command line option
+    case proplists:get_value(sys_config, Opts, []) of
+        [H | _]=Configs when is_list(H) ->
+            Configs;
+        [] ->
+            [];
+        Configs ->
+            [Configs]
     end.
 
 -spec format_error(any()) -> iolist().
@@ -73,16 +92,17 @@ do_tests(State, EqcOpts, _Tests) ->
     {Opts, _} = rebar_state:command_parsed_args(State),
 
     Plain = proplists:get_value(plain, Opts),
+    BaseDir = rebar_dir:base_dir(State),
     TestFun =
         case CounterExMode of
             true ->
                 rebar_api:console("Rechecking EQC counterexamples...~n", []),
-                recheck_fun(AllProps);
+                recheck_fun(BaseDir, AllProps);
             false ->
                 rebar_api:console("Running EQC tests...~n", []),
                 execute_property_fun(EqcFun, Plain, TestQuantity, AllProps)
         end,
-    case handle_results(lists:foldl(TestFun, [], Properties), CounterExMode) of
+    case handle_results(BaseDir, lists:foldl(TestFun, [], Properties), CounterExMode) of
         {error, Reason} ->
             ?PRV_ERROR(Reason);
         ok ->
@@ -101,8 +121,8 @@ coloured_output(S, F) ->
 normal_output(S,F) ->
     io:fwrite(user, S, F).
 
-read_counterexample(Property) ->
-    Filename = [".eqc/", atom_to_list(Property), "_counterexample.eqc"],
+read_counterexample(BaseDir, Property) ->
+    Filename = filename:join([BaseDir, "eqc", atom_to_list(Property) ++ "_counterexample.eqc"]),
     case file:read_file(Filename) of
         {ok, FileBin} ->
             {ok, binary_to_term(FileBin)};
@@ -110,10 +130,10 @@ read_counterexample(Property) ->
             {error, not_found}
     end.
 
-recheck_fun(AllProps) ->
+recheck_fun(BaseDir, AllProps) ->
     fun({Module, Property}, Results) ->
         %% Lookup the counterexample for the property
-        case read_counterexample(Property) of
+        case read_counterexample(BaseDir, Property) of
             {ok, CounterExample} ->
                 Result = eqc:check(Module:Property(), CounterExample),
                 [{Property, Result} | Results];
@@ -123,7 +143,7 @@ recheck_fun(AllProps) ->
        (Property, Results) ->
         case lists:keyfind(Property, 2, AllProps) of
             {Module, Property} ->
-                case read_counterexample(Property) of
+                case read_counterexample(BaseDir, Property) of
                     {ok, CounterExample} ->
                         Result = eqc:check(Module:Property(), CounterExample),
                         [{Property, Result} | Results];
@@ -282,7 +302,7 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
                 TopAppsPaths = app_paths(NewState),
                 rebar_utils:update_code(rebar_state:code_paths(NewState, all_deps)
                                         -- TopAppsPaths, [soft_purge]),
-                code:add_patha(TopAppsPaths),
+                code:add_pathsa(TopAppsPaths),
                 ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
                                                  rebar_app_info:dir(AppInfo),
                                                  ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
@@ -293,7 +313,7 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
     TopAppsPaths = app_paths(State),
     rebar_utils:update_code(rebar_state:code_paths(State, all_deps)
                             -- TopAppsPaths, [soft_purge]),
-    code:add_patha(TopAppsPaths),
+    code:add_pathsa(TopAppsPaths),
 
     {ok, test_set(TestApps, Suites)}.
 
@@ -501,7 +521,7 @@ filter_passes(Results) ->
                 end,
     lists:filter(FilterFun, Results).
 
-handle_results(Results, true) ->
+handle_results(_BaseDir, Results, true) ->
     case filter_passes(Results) of
         [] ->
             ok;
@@ -509,23 +529,23 @@ handle_results(Results, true) ->
             {FailedProps, _} = lists:unzip(Fails),
             {error, {properties_failed, lists:flatten(FailedProps)}}
     end;
-handle_results(Results, false) ->
+handle_results(BaseDir, Results, false) ->
     case filter_passes(Results) of
         [] ->
             ok;
         Fails ->
-            write_counterexamples(Fails),
+            write_counterexamples(BaseDir, Fails),
             {FailedProps, _} = lists:unzip(Fails),
             {error, {properties_failed, lists:flatten(FailedProps)}}
     end.
 
-write_counterexamples(Fails) ->
-    filelib:ensure_dir(".eqc/dummy"),
-    [write_counterexample(Fail) || Fail <- Fails],
+write_counterexamples(BaseDir, Fails) ->
+    filelib:ensure_dir(filename:join([BaseDir, "eqc", "dummy"])),
+    [write_counterexample(BaseDir, Fail) || Fail <- Fails],
     ok.
 
-write_counterexample({Property, CounterEx}) ->
-    Filename = [".eqc/", atom_to_list(Property), "_counterexample.eqc"],
+write_counterexample(BaseDir, {Property, CounterEx}) ->
+    Filename = filename:join([BaseDir, "eqc", atom_to_list(Property) ++ "_counterexample.eqc"]),
     file:write_file(Filename, term_to_binary(CounterEx)).
 
 eqc_opts(_State) ->
