@@ -85,7 +85,8 @@ do_tests(State, EqcOpts, _Tests) ->
 
     ProjectApps = project_apps(State),
     AllPropsRaw = properties(app_modules(app_names(ProjectApps), []) ++
-                                 test_modules(ProjectApps,
+                                 test_modules(State,
+                                              ProjectApps,
                                               proplists:get_value(dir, EqcOpts))),
     AllProps = lists:usort(AllPropsRaw),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
@@ -298,7 +299,8 @@ copy_and_compile_test_dirs(State, Opts, Dirs) when is_list(Dirs) ->
 compile_tests(State, TestApps, Suites, RawOpts) ->
     copy_and_compile_test_dirs(State, RawOpts),
     F = fun(AppInfo) ->
-                NewState = replace_src_dirs(State, ["eqc"]),
+                Dir = proplists:get_value(dir, RawOpts),
+                NewState = replace_src_dirs(State, [Dir]),
                 TopAppsPaths = app_paths(NewState),
                 rebar_utils:update_code(rebar_state:code_paths(NewState, all_deps)
                                         -- TopAppsPaths, [soft_purge]),
@@ -308,6 +310,7 @@ compile_tests(State, TestApps, Suites, RawOpts) ->
                                                  ec_cnv:to_list(rebar_app_info:out_dir(AppInfo)))
         end,
     lists:foreach(F, TestApps),
+
     rebar_utils:update_code(rebar_state:code_paths(State, all_deps), [soft_purge]),
     ok = maybe_cover_compile(State, RawOpts),
     TopAppsPaths = app_paths(State),
@@ -340,9 +343,10 @@ copy(State, Target) ->
 
 compile_dir(State, Dir) ->
     NewState = replace_src_dirs(State, [Dir]),
+    BaseDir = rebar_dir:base_dir(State),
     ok = rebar_erlc_compiler:compile(rebar_state:opts(NewState),
-                                     rebar_dir:base_dir(State),
-                                     filename:join(Dir, "../ebin")),
+                                     BaseDir,
+                                     filename:join([BaseDir, "extras", filename:basename(Dir)])),
     ok = maybe_cover_compile(State, Dir),
     Dir.
 
@@ -365,13 +369,17 @@ filter_checkouts([App|Rest], Acc) ->
         false -> filter_checkouts(Rest, [App|Acc])
     end.
 
-test_modules(_, undefined) ->
+test_modules(_, _, undefined) ->
     [];
-test_modules(ProjectApps, TestDir) ->
-    lists:flatten([project_tests(ProjectApp, TestDir) || ProjectApp <- ProjectApps]).
+test_modules(State, ProjectApps, TestDir) ->
+    M = lists:flatten([begin
+                           Path = filename:join(rebar_app_info:dir(ProjectApp), TestDir),
+                           project_tests(Path)
+                       end || ProjectApp <- ProjectApps]),
+    BaseDir = rebar_dir:base_dir(State),
+    M ++ project_tests(filename:join(BaseDir, TestDir)).
 
-project_tests(ProjectApp, TestDir) ->
-    Path = filename:join(rebar_app_info:dir(ProjectApp), TestDir),
+project_tests(Path) ->
     case file:list_dir(Path) of
         {ok, Files} ->
             Modules = [list_to_atom(filename:rootname(File))
@@ -441,9 +449,13 @@ merge_opts(Opts1, Opts2) ->
                     lists:ukeysort(1, Opts2)).
 
 parse_opts([], Parsed) ->
-    %% Add "eqc" test directory.
-    %% TODO: Provide option to configure directory name
-    [{dir, "eqc"} | Parsed];
+    %% add default dir, eqc, if dir not already set
+    case proplists:is_defined(dir, Parsed) of
+        false ->
+            [{dir, "eqc"} | Parsed];
+        _ ->
+            Parsed
+    end;
 parse_opts([{properties, PropsString} | RestOpts], Parsed) ->
     Properties = [property_to_atom(string:tokens(Prop, ":"))
                   || Prop <- string:tokens(PropsString, ",")],
@@ -549,7 +561,7 @@ write_counterexample(BaseDir, {Property, CounterEx}) ->
     file:write_file(Filename, term_to_binary(CounterEx)).
 
 eqc_opts(_State) ->
-    [
+    [{dir, $d, "dir", string, help(dir)},
      {numtests, $n, "numtests", integer, help(numtests)},
      {testing_time, $t, "testtime", integer, help(testing_time)},
      {properties, $p, "properties", string, help(properties)},
@@ -558,6 +570,8 @@ eqc_opts(_State) ->
      {name, undefined, "name", atom, help(name)},
      {sname, undefined, "sname", atom, help(sname)}
     ].
+
+help(dir)            -> "directory where the eqc tests are located (defaults to \"eqc\")";
 help(sname)          -> "Run in Erlang node with short name";
 help(name)           -> "Run in Erlang node with long name";
 help(plain)          -> "Renders output in the classical plain b/w";
