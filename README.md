@@ -24,11 +24,12 @@ The plugin scans all source modules for EQC properties. Additionally
 it looks for standalone EQC properties in a top-level `eqc` directory.
 
 The default plugin behavior is to execute all properties found in the
-application source code or the `eqc` directory. This behavior can be
-overridden by using the `--properties` option to specify a
-comma-separated list of properties to be executed. List entries may be
-of the form `ModuleName:PropertyName` or simply `PropertyName` if the
-property name is unique within the project.
+application source code or the `eqc` directory. This behavior can be overridden
+by using the `--properties` option to specify a comma-separated list of
+properties to be executed. List entries may be of the form
+`ModuleName:PropertyName` or simply `PropertyName` if the property name is
+unique within the project. Additionally, as of version 1.1.0 there is a `--dir`
+option to override the default test directory location of `eqc`.
 
 The plugin also has a counterexample mode. When a property fails when
 run using the plugin a counterexample file is written to an `.eqc`

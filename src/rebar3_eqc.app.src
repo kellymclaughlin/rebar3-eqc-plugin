@@ -5,7 +5,7 @@
   {applications, [kernel, stdlib, cf]},
   {env, []},
 
-  {contributors, ["Kelly McLaughlin "]},
+  {maintainers, ["Kelly McLaughlin", "Tom Santero"]},
   {licenses, ["Apache"]},
   {links, [{"Github", "https://github.com/kellymclaughlin/rebar3-eqc-plugin"}]}
 ]}.
