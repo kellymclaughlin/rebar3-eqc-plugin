@@ -9,7 +9,7 @@
          do/1,
          format_error/1]).
 
--include_lib("eqc/include/eqc.hrl").
+%% Avoid including `eqc.hrl` (`-include_lib("eqc/include/eqc.hrl").`) unnecessarily, in order to ease build.
 
 -define(PROVIDER, eqc).
 -define(DEPS, [compile]).
@@ -175,7 +175,7 @@ execute_property_fun(EqcFun, Plain, TestQuantity, AllProps) ->
         io:setopts([{encoding, unicode}]),
         Result = eqc:counterexample(
                    eqc:EqcFun(TestQuantity,
-                              on_output(OutputFun, Module:Property()))),
+                              eqc:on_output(OutputFun, Module:Property()))),
         io:setopts([{encoding, latin1}]),
         [{Property, Result} | Results];
        (Property, Results) ->
@@ -184,7 +184,7 @@ execute_property_fun(EqcFun, Plain, TestQuantity, AllProps) ->
                 io:setopts([{encoding, unicode}]),
                 Result = eqc:counterexample(
                            eqc:EqcFun(TestQuantity,
-                                      on_output(OutputFun, Module:Property()))),
+                                      eqc:on_output(OutputFun, Module:Property()))),
                 io:setopts([{encoding, latin1}]),
                 [{Property, Result} | Results];
             false ->
