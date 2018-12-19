@@ -47,7 +47,7 @@ do(State) ->
                                rebar_file_utils:consult_config(State, Filename)
                             end, SysConfigs),
     [application:load(Application) || Config <- Configs, {Application, _} <- Config],
-    rebar_utils:reread_config(Configs, [update_logger]),
+    reread_config(Configs, [update_logger]),
 
     case prepare_tests(State, EqcOpts) of
         {ok, Tests} ->
@@ -645,3 +645,12 @@ check_epmd({ok, _}) ->
 check_epmd({error, Reason}) ->
     rebar_utils:abort("Erlang Distribution failed: ~p. "
                       "Verify that epmd is running and try again.", [Reason]).
+
+reread_config(ConfigList, Opts) ->
+    _ = rebar_utils:module_info(), % make sure rebar_utils is loaded
+    case erlang:function_exported(rebar_utils, reread_config, 2) of
+        true ->
+            rebar_utils:reread_config(ConfigList, Opts);
+        false ->
+            rebar_utils:reread_config(ConfigList)
+    end.
