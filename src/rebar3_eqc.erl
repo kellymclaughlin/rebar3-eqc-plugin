@@ -90,6 +90,7 @@ do_tests(State, EqcOpts, _Tests) ->
                                               proplists:get_value(dir, EqcOpts))),
     AllProps = lists:usort(AllPropsRaw),
     Properties = proplists:get_value(properties, EqcOpts, AllProps),
+    rebar_api:console("Identified ~p EQC test properties...~n", [length(Properties)]),
     {Opts, _} = rebar_state:command_parsed_args(State),
 
     Plain = proplists:get_value(plain, Opts),
