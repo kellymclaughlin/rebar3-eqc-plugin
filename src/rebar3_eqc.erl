@@ -81,8 +81,6 @@ do_tests(State, EqcOpts, _Tests) ->
     {EqcFun, TestQuantity} = numtests_or_testing_time(EqcOpts),
     CounterExMode = lists:member({counterexample, true}, EqcOpts),
 
-    ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
-
     ProjectApps = project_apps(State),
     AllPropsRaw = properties(app_modules(app_names(ProjectApps), []) ++
                                  test_modules(State,
@@ -108,6 +106,7 @@ do_tests(State, EqcOpts, _Tests) ->
         {error, Reason} ->
             ?PRV_ERROR(Reason);
         ok ->
+            ok = rebar_prv_cover:maybe_write_coverdata(State, ?PROVIDER),
             {ok, State}
     end.
 
