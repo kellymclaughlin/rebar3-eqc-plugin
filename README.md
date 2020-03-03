@@ -46,14 +46,14 @@ properties.
 To install the plugin using the Hex package manaage, add the following
 to the rebar.config file:
 
-```
+```erlang
 {plugins, [rebar3_eqc]}
 ```
 
 Alternatively, to install the plugin from github use the following:
 
 
-```
+```erlang
 {plugins, [
     {rebar3_eqc, ".*", {git, "https://github.com/kellymclaughlin/rebar3-eqc-plugin.git", {tag, "1.0.0"}}}
 ]}.
@@ -63,13 +63,13 @@ Alternatively, to install the plugin from github use the following:
 To set the number of test executions to 500 instead of the default of
 100, add the following rebar.config entry:
 
-```
+```erlang
 {eqc_opts, [{numtests, 500}]}.
 ```
 
 To specify that each property execute for 30 seconds, use this entry instead:
 
-```
+```erlang
 {eqc_opts, [{testing_time, 30}]}.
 ```
 
